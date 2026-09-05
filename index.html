@@ -21,20 +21,20 @@
   input[type=text],input[type=number]{font-family:var(--font-mono);}
 
   .topbar{
-    width:min(2000px,98vw); display:flex; align-items:center; gap:18px; flex-wrap:wrap;
+    width:min(2000px,98vw); display:flex; align-items:center; gap:14px; flex-wrap:wrap;
   }
   .topbar .brand{font-family:var(--font-display); font-size:30px; color:var(--phosphor-bright); letter-spacing:.04em; text-shadow:0 0 12px rgba(79,224,127,.5);}
-  .topbar .field{display:flex; flex-direction:column; gap:3px; flex:1; min-width:220px;}
-  .topbar label{font-size:10px; letter-spacing:.12em; color:var(--phosphor-dim); text-transform:uppercase;}
   .topbar input[type=text]{
+    flex:1; min-width:170px;
     background:var(--recess); border:1px solid var(--phosphor-dim); color:var(--phosphor-bright);
     padding:7px 9px; font-size:14px; outline:none;
   }
   .topbar input[type=text]:focus{border-color:var(--phosphor);}
-  .actions{display:flex; gap:10px; margin-left:auto;}
+  .topbar input[type=text]::placeholder{color:#7a827c;}
+  .actions{display:flex; gap:7px; margin-left:auto; flex-wrap:wrap; justify-content:flex-end;}
   .btn{
     background:transparent; border:1px solid var(--phosphor-dim); color:var(--phosphor);
-    padding:9px 14px; font-size:11px; letter-spacing:.1em; text-transform:uppercase;
+    padding:8px 11px; font-size:11px; letter-spacing:.08em; text-transform:uppercase;
     transition:border-color .15s, color .15s, box-shadow .15s;
   }
   .btn:hover{border-color:var(--phosphor); color:var(--phosphor-bright); box-shadow:0 0 8px rgba(79,224,127,.25);}
@@ -46,6 +46,7 @@
   .btn.small{padding:5px 9px; font-size:10px;}
 
   .workspace{width:min(2000px,98vw); display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap;}
+  .workspace[hidden]{display:none;}
 
   /* ---- the console screen ---- */
   .console-frame{
@@ -170,6 +171,27 @@
   .file-row .file-arrow{color:var(--phosphor-dim); font-family:var(--font-display); font-size:16px;}
   .file-list-empty{font-size:11.5px; color:var(--phosphor-dim); padding:10px 2px;}
 
+  /* ---- community view (replaces the editor workspace, not a modal) ---- */
+  .community-view{width:min(2000px,98vw); display:flex; gap:20px; align-items:flex-start;}
+  .community-view[hidden]{display:none;}
+  .community-list-panel{
+    width:300px; flex-shrink:0; background:var(--screen); border:1px solid var(--phosphor-faint);
+    padding:14px; max-height:calc(100vh - 100px); max-height:calc(100dvh - 100px); overflow:auto;
+  }
+  .community-list-head{display:flex; align-items:center; gap:12px; margin-bottom:12px;}
+  .community-list-head h2{font-size:20px; color:var(--phosphor-bright);}
+  .community-list-panel .file-list{max-height:none; overflow:visible;}
+  .community-preview-panel{
+    flex:1; display:flex; flex-direction:column; align-items:center; gap:14px;
+    background:var(--screen); border:1px solid var(--phosphor-faint); padding:20px;
+  }
+  #communityPreviewCanvas{
+    background:#000; border:1px solid var(--phosphor-faint); image-rendering:pixelated;
+    width:min(480px,100%); height:auto; aspect-ratio:480/320;
+  }
+  .community-preview-name{font-size:16px; color:var(--phosphor-bright); text-align:center; min-height:1.4em;}
+  .file-row.selected{border-color:var(--phosphor-bright); color:var(--phosphor-bright); box-shadow:0 0 8px rgba(79,224,127,.3);}
+
   .variant-tabs{display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap;}
   .variant-tabs button{
     background:transparent; border:1px solid var(--phosphor-dim); color:var(--phosphor-dim);
@@ -216,22 +238,26 @@
   }
   .toast[hidden]{display:none;}
   .toast.err{background:var(--danger); color:#2a0000;}
+
+  .submit-status.loading{color:var(--phosphor-dim);}
+  .submit-status.success{color:var(--phosphor-bright);}
+  .submit-status.error{color:var(--danger);}
+  .submit-status a{color:var(--phosphor-bright);}
 </style>
 
 <div class="topbar">
   <div class="brand">CONDITION CHARACTER EDITOR</div>
-  <div class="field">
-    <label for="nameInput">Character Name</label>
-    <input id="nameInput" type="text" maxlength="60" value="New Character">
-  </div>
+  <input id="nameInput" type="text" maxlength="60" placeholder="Enter character name">
   <div class="actions">
+    <button class="btn primary" id="connectBtn">Connect</button>
+    <button class="btn" id="uploadBtn" disabled>Upload</button>
+    <button class="btn" id="editBtn" disabled>Edit</button>
+    <button class="btn" id="communityBtn">Community</button>
+    <button class="btn" id="shareBtn">Share</button>
+    <button class="btn" id="exportBtn">Export</button>
     <button class="btn" id="importBtn">Import</button>
     <input id="importFile" type="file" accept=".char" hidden>
     <button class="btn" id="resetBtn">Reset</button>
-    <button class="btn primary" id="exportBtn">Export</button>
-    <button class="btn" id="connectBtn">Connect</button>
-    <button class="btn" id="uploadBtn" disabled>Upload</button>
-    <button class="btn" id="editBtn" disabled>Edit</button>
   </div>
 </div>
 
@@ -272,6 +298,21 @@
       <button class="btn" id="noHudBtn">No HUD</button>
     </div>
     <button class="btn small" id="resetPositionsBtn" style="width:100%;">Reset Positions</button>
+  </div>
+</div>
+
+<div class="community-view" id="communityView" hidden>
+  <div class="community-list-panel">
+    <div class="community-list-head">
+      <button class="btn" id="communityBackBtn">&larr; Back</button>
+      <h2>Community Creations</h2>
+    </div>
+    <div class="file-list" id="communityFileList"></div>
+  </div>
+  <div class="community-preview-panel">
+    <canvas id="communityPreviewCanvas" width="480" height="320"></canvas>
+    <div class="community-preview-name" id="communityPreviewName">Select a character to preview it</div>
+    <button class="btn primary" id="communityLoadBtn" disabled>Load Into Editor</button>
   </div>
 </div>
 
@@ -354,6 +395,27 @@
     <div class="panel-head"><h2>Open From Pip-Boy</h2><button class="close-x" id="closeDeviceFiles">&times;</button></div>
     <div class="fallback-hint">Character files (.char) found in HOLO/CHARSWITCHER/chars on the connected Pip-Boy. Pick one to load it into the editor.</div>
     <div class="file-list" id="deviceFileList"></div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="shareModal" hidden>
+  <div class="panel" style="width:min(420px,96vw);">
+    <div class="panel-head"><h2>Share to Community</h2><button class="close-x" id="closeShare">&times;</button></div>
+    <div class="fallback-hint">
+      Submits "<span id="shareCharacterName"></span>" as a pull request to the
+      community characters repo. The maintainer reviews and merges it before
+      it shows up for anyone else.
+    </div>
+    <div id="githubLoginSection">
+      <button class="btn primary" id="githubLoginBtn" style="width:100%;">Sign in with GitHub</button>
+    </div>
+    <div id="githubUserSection" style="display:none; align-items:center; gap:10px; margin:10px 0;">
+      <img id="githubUserAvatar" src="" alt="" style="width:28px; height:28px; border-radius:50%;">
+      <span id="githubUsername" style="flex:1; color:var(--phosphor-bright);"></span>
+      <button class="btn small" id="githubLogoutBtn">Sign out</button>
+    </div>
+    <button class="btn primary" id="shareConfirmBtn" style="width:100%; margin-top:10px;" disabled>Submit</button>
+    <div class="submit-status" id="shareStatus" style="display:none; margin-top:10px; font-size:12px; line-height:1.6;"></div>
   </div>
 </div>
 
@@ -796,7 +858,7 @@ var EspruinoUART = (function(){
   function clone(o){ return JSON.parse(JSON.stringify(o)); }
 
   function freshState(){
-    var st = { name:"New Character", positions:clone(DEFAULT_POSITIONS), bars:clone(DEFAULT_BARS), images:{} };
+    var st = { name:"", positions:clone(DEFAULT_POSITIONS), bars:clone(DEFAULT_BARS), images:{} };
     for (var i=0;i<ALL_IMAGE_KEYS.length;i++){
       var k = ALL_IMAGE_KEYS[i], sz = DEFAULT_SIZES[k];
       if (STOCK_DEFAULT_IMAGES[k]) { try { st.images[k] = decodeImageString(STOCK_DEFAULT_IMAGES[k]); continue; } catch(e){} }
@@ -1642,6 +1704,11 @@ var EspruinoUART = (function(){
     var connected = !!uartConn;
     connectBtn.textContent = connected ? "Disconnect" : "Connect";
     connectBtn.classList.toggle("connected", connected);
+    // Highlighted like Export used to be, but only while disconnected - once
+    // connected, .connected's own border/glow already shows active status,
+    // and layering both classes clashed (primary's dark text on a light
+    // background fought with connected's own light text color).
+    connectBtn.classList.toggle("primary", !connected);
     uploadBtn.disabled = !connected || deviceBusy;
     editBtn.disabled = !connected || deviceBusy;
   }
@@ -1787,6 +1854,417 @@ var EspruinoUART = (function(){
     };
     reader.readAsArrayBuffer(file);
   });
+
+  // ---------- Community Creations ----------
+  // Mirrors the GitHub OAuth + fork/branch/PR flow already proven out on
+  // https://github.com/AidansLab/Pip-Boy-Inventory-JSON-Generator, adapted
+  // to be simpler: a character submission is one self-contained .char file,
+  // not a shared preset array that needs an existing file read and patched.
+  // Approval = the maintainer reviewing and merging the resulting PR, same
+  // as any other contribution to the project.
+  var GITHUB_CONFIG = {
+    // Shared with the Inventory Generator tool - same GitHub OAuth App and
+    // the same (generic, repo-agnostic) Netlify token-exchange function.
+    // Requires the OAuth App's own callback URL to be set to the bare
+    // GitHub Pages root (not a specific tool's path), so it validates a
+    // redirect back to *this* page too.
+    clientId: "Ov23lihn0UQpW8LYbZtI",
+    oauthProxyUrl: "https://aidanslab-github-oauth.netlify.app/.netlify/functions/github-oauth",
+    targetOwner: "AidansLab",
+    targetRepo: "ConditionCharacterEditor",
+    scopes: "public_repo"
+  };
+
+  var githubToken = localStorage.getItem("github_token") || null;
+  var githubUser = null;
+
+  var shareModal = document.getElementById("shareModal");
+  var shareBtn = document.getElementById("shareBtn");
+  var shareConfirmBtn = document.getElementById("shareConfirmBtn");
+  var githubLoginSection = document.getElementById("githubLoginSection");
+  var githubUserSection = document.getElementById("githubUserSection");
+
+  document.getElementById("closeShare").addEventListener("click", function(){ shareModal.hidden = true; });
+  document.getElementById("githubLoginBtn").addEventListener("click", loginWithGitHub);
+  document.getElementById("githubLogoutBtn").addEventListener("click", function(){ logoutGitHub(); updateGitHubLoginUI(); });
+  shareConfirmBtn.addEventListener("click", submitCharacterToCommunity);
+
+  shareBtn.addEventListener("click", function(){
+    document.getElementById("shareCharacterName").textContent = state.name || "New Character";
+    updateShareStatus("", "");
+    if (githubToken) fetchGitHubUser().then(updateGitHubLoginUI);
+    else updateGitHubLoginUI();
+    shareModal.hidden = false;
+  });
+
+  function updateShareStatus(message, type){
+    var status = document.getElementById("shareStatus");
+    if (!message){ status.style.display = "none"; return; }
+    status.textContent = message;
+    status.className = "submit-status " + type;
+    status.style.display = "block";
+  }
+
+  function loginWithGitHub(){
+    var redirectUri = window.location.origin + window.location.pathname;
+    var authUrl = "https://github.com/login/oauth/authorize?client_id=" + GITHUB_CONFIG.clientId +
+      "&scope=" + GITHUB_CONFIG.scopes + "&redirect_uri=" + encodeURIComponent(redirectUri);
+    var popup = window.open(authUrl, "github-oauth", "width=600,height=700");
+    window.addEventListener("message", function handleOAuthMessage(event){
+      if (event.origin !== window.location.origin) return;
+      if (event.data && event.data.type === "github-oauth-code"){
+        window.removeEventListener("message", handleOAuthMessage);
+        popup.close();
+        exchangeCodeForToken(event.data.code);
+      }
+    });
+  }
+
+  function checkOAuthCallback(){
+    var params = new URLSearchParams(window.location.search);
+    var code = params.get("code");
+    if (!code) return;
+    window.history.replaceState({}, document.title, window.location.pathname);
+    if (window.opener){
+      window.opener.postMessage({ type: "github-oauth-code", code: code }, window.location.origin);
+      window.close();
+    } else {
+      exchangeCodeForToken(code);
+    }
+  }
+
+  async function exchangeCodeForToken(code){
+    try{
+      updateShareStatus("Authenticating with GitHub...", "loading");
+      var response = await fetch(GITHUB_CONFIG.oauthProxyUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: code })
+      });
+      var data = await response.json();
+      if (data.error) throw new Error(data.error);
+      githubToken = data.access_token;
+      localStorage.setItem("github_token", githubToken);
+      await fetchGitHubUser();
+      updateGitHubLoginUI();
+      updateShareStatus("", "");
+    }catch(e){
+      updateShareStatus("Authentication failed: " + errText(e), "error");
+    }
+  }
+
+  async function fetchGitHubUser(){
+    if (!githubToken) return null;
+    try{
+      var response = await fetch("https://api.github.com/user", {
+        headers: { "Authorization": "token " + githubToken }
+      });
+      if (!response.ok){
+        if (response.status === 401){ logoutGitHub(); return null; }
+        throw new Error("Failed to fetch user");
+      }
+      githubUser = await response.json();
+      return githubUser;
+    }catch(e){
+      return null;
+    }
+  }
+
+  function logoutGitHub(){
+    githubToken = null;
+    githubUser = null;
+    localStorage.removeItem("github_token");
+  }
+
+  function updateGitHubLoginUI(){
+    if (githubToken && githubUser){
+      githubLoginSection.style.display = "none";
+      githubUserSection.style.display = "flex";
+      document.getElementById("githubUserAvatar").src = githubUser.avatar_url;
+      document.getElementById("githubUsername").textContent = githubUser.login;
+      shareConfirmBtn.disabled = false;
+    } else {
+      githubLoginSection.style.display = "block";
+      githubUserSection.style.display = "none";
+      shareConfirmBtn.disabled = true;
+    }
+  }
+
+  async function ensureFork(){
+    try{
+      var response = await fetch("https://api.github.com/repos/" + githubUser.login + "/" + GITHUB_CONFIG.targetRepo, {
+        headers: { "Authorization": "token " + githubToken }
+      });
+      if (response.ok) return await response.json();
+    }catch(e){ /* fork doesn't exist yet, create it below */ }
+
+    var forkResponse = await fetch("https://api.github.com/repos/" + GITHUB_CONFIG.targetOwner + "/" + GITHUB_CONFIG.targetRepo + "/forks", {
+      method: "POST",
+      headers: { "Authorization": "token " + githubToken, "Content-Type": "application/json" }
+    });
+    if (!forkResponse.ok) throw new Error("Failed to create fork");
+    var fork = await forkResponse.json();
+    await new Promise(function(resolve){ setTimeout(resolve, 3000); }); // wait for the fork to be ready
+    return fork;
+  }
+
+  async function createBranch(owner, repo, branchName){
+    var refResponse = await fetch("https://api.github.com/repos/" + owner + "/" + repo + "/git/ref/heads/main", {
+      headers: { "Authorization": "token " + githubToken }
+    });
+    if (!refResponse.ok) throw new Error("Failed to get main branch ref");
+    var refData = await refResponse.json();
+    var createResponse = await fetch("https://api.github.com/repos/" + owner + "/" + repo + "/git/refs", {
+      method: "POST",
+      headers: { "Authorization": "token " + githubToken, "Content-Type": "application/json" },
+      body: JSON.stringify({ ref: "refs/heads/" + branchName, sha: refData.object.sha })
+    });
+    if (!createResponse.ok) throw new Error("Failed to create branch");
+    return await createResponse.json();
+  }
+
+  // Base64-encodes an ArrayBuffer without blowing the call stack on large
+  // files - buildCharacterFile() output is raw bytes, not text, so this
+  // can't reuse the btoa(unescape(encodeURIComponent(...))) trick used
+  // elsewhere in this file for text content.
+  function arrayBufferToBase64(buffer){
+    var bytes = new Uint8Array(buffer);
+    var chunkSize = 0x8000;
+    var chunks = [];
+    for (var i=0; i<bytes.length; i+=chunkSize){
+      chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, i+chunkSize)));
+    }
+    return btoa(chunks.join(""));
+  }
+
+  async function commitNewBinaryFile(owner, repo, path, branch, base64Content, message){
+    var response = await fetch("https://api.github.com/repos/" + owner + "/" + repo + "/contents/" + path, {
+      method: "PUT",
+      headers: { "Authorization": "token " + githubToken, "Content-Type": "application/json" },
+      body: JSON.stringify({ message: message, content: base64Content, branch: branch })
+    });
+    if (!response.ok){
+      var error = await response.json();
+      throw new Error(error.message || "Failed to commit file");
+    }
+    return await response.json();
+  }
+
+  async function createPullRequest(forkOwner, branchName, filename, characterName){
+    var response = await fetch("https://api.github.com/repos/" + GITHUB_CONFIG.targetOwner + "/" + GITHUB_CONFIG.targetRepo + "/pulls", {
+      method: "POST",
+      headers: { "Authorization": "token " + githubToken, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        title: "Add community character: " + characterName,
+        body: "## New Community Character\n\nAdds **" + characterName + "** to `community_chars/" + filename + "`.\n\n---\n*Submitted via the Condition Character Editor*",
+        head: forkOwner + ":" + branchName,
+        base: "main"
+      })
+    });
+    if (!response.ok){
+      var error = await response.json();
+      throw new Error(error.message || "Failed to create PR");
+    }
+    return await response.json();
+  }
+
+  async function submitCharacterToCommunity(){
+    if (!githubToken || !githubUser) return;
+    var characterName = state.name || "New Character";
+    var filename = sanitizeBaseName(characterName) + "-" + githubUser.login + ".char";
+
+    try{
+      updateShareStatus("Creating fork if needed...", "loading");
+      var fork = await ensureFork();
+
+      updateShareStatus("Creating branch...", "loading");
+      var branchName = "add-character-" + sanitizeBaseName(characterName).toLowerCase() + "-" + Date.now();
+      await createBranch(fork.owner.login, GITHUB_CONFIG.targetRepo, branchName);
+
+      updateShareStatus("Uploading character file...", "loading");
+      var base64Content = arrayBufferToBase64(buildCharacterFile());
+      await commitNewBinaryFile(fork.owner.login, GITHUB_CONFIG.targetRepo, "community_chars/" + filename, branchName,
+        base64Content, "Add community character " + characterName);
+
+      updateShareStatus("Creating Pull Request...", "loading");
+      var pr = await createPullRequest(fork.owner.login, branchName, filename, characterName);
+
+      updateShareStatus("", "");
+      var status = document.getElementById("shareStatus");
+      status.className = "submit-status success";
+      status.style.display = "block";
+      status.innerHTML = "Pull Request created! <a href=\"" + pr.html_url + "\" target=\"_blank\">View PR #" + pr.number + "</a>";
+    }catch(e){
+      updateShareStatus("Error: " + errText(e), "error");
+    }
+  }
+
+  // ---------- Community browse ----------
+  // A full page swapped in for the editor workspace (not a modal), so it
+  // can show a persistent list on the left and a live preview on the right
+  // - picking an entry only previews it; "Load Into Editor" is the one
+  // action that actually commits it via importManifest(), same as every
+  // other import path in this file.
+  var communityView = document.getElementById("communityView");
+  var communityFileList = document.getElementById("communityFileList");
+  var communityPreviewName = document.getElementById("communityPreviewName");
+  var communityLoadBtn = document.getElementById("communityLoadBtn");
+  var communityEntries = [];
+  var selectedCommunityEntry = null;
+  var selectedCommunityParsed = null; // {manifest, images} of the previewed entry
+
+  function showCommunityView(){
+    workspaceEl.hidden = true;
+    communityView.hidden = false;
+    loadCommunityList();
+  }
+  function showEditorView(){
+    communityView.hidden = true;
+    workspaceEl.hidden = false;
+    resizeToFit();
+  }
+  document.getElementById("communityBtn").addEventListener("click", showCommunityView);
+  document.getElementById("communityBackBtn").addEventListener("click", showEditorView);
+  communityLoadBtn.addEventListener("click", function(){
+    if (!selectedCommunityParsed) return;
+    var failed = importManifest(selectedCommunityParsed.manifest, selectedCommunityParsed.images);
+    toast("Loaded " + (selectedCommunityParsed.manifest.name || "character") + " from Community" + failedImagesSuffix(failed), failed.length>0);
+    showEditorView();
+  });
+
+  function clearCommunityPreview(){
+    var canvas = document.getElementById("communityPreviewCanvas");
+    canvas.getContext("2d").clearRect(0,0,canvas.width,canvas.height);
+  }
+
+  async function loadCommunityList(){
+    communityFileList.innerHTML = "<div class=\"file-list-empty\">Loading...</div>";
+    selectedCommunityEntry = null; selectedCommunityParsed = null;
+    communityLoadBtn.disabled = true;
+    communityPreviewName.textContent = "Select a character to preview it";
+    clearCommunityPreview();
+    try{
+      communityEntries = await fetchCommunityCharacters();
+      renderCommunityList(communityEntries);
+    }catch(e){
+      communityFileList.innerHTML = "<div class=\"file-list-empty\">Could not load community characters: " + errText(e).replace(/</g,"&lt;") + "</div>";
+    }
+  }
+
+  async function fetchCommunityCharacters(){
+    var response = await fetch("https://api.github.com/repos/" + GITHUB_CONFIG.targetOwner + "/" + GITHUB_CONFIG.targetRepo + "/contents/community_chars");
+    if (!response.ok) throw new Error("GitHub API responded " + response.status);
+    var files = await response.json();
+    if (!Array.isArray(files)) throw new Error("Unexpected response");
+    return files.filter(function(f){ return f.type === "file" && /\.char$/i.test(f.name); })
+      .sort(function(a,b){ return a.name.localeCompare(b.name); });
+  }
+
+  function renderCommunityList(entries){
+    communityFileList.innerHTML = "";
+    if (!entries.length){
+      communityFileList.innerHTML = "<div class=\"file-list-empty\">No community characters yet.</div>";
+      return;
+    }
+    entries.forEach(function(entry){
+      var row = document.createElement("button");
+      row.className = "file-row";
+      row.type = "button";
+      row.innerHTML = "<span>" + entry.name.replace(/</g,"&lt;") + "</span><span class=\"file-arrow\">&#8594;</span>";
+      row.addEventListener("click", function(){ selectCommunityEntry(entry, row); });
+      communityFileList.appendChild(row);
+    });
+  }
+
+  async function selectCommunityEntry(entry, row){
+    Array.prototype.forEach.call(communityFileList.querySelectorAll(".file-row"), function(r){ r.classList.remove("selected"); });
+    row.classList.add("selected");
+    selectedCommunityEntry = entry;
+    selectedCommunityParsed = null;
+    communityLoadBtn.disabled = true;
+    communityPreviewName.textContent = "Loading...";
+    clearCommunityPreview();
+    try{
+      var response = await fetch(entry.download_url);
+      if (!response.ok) throw new Error("Download failed: " + response.status);
+      var buffer = await response.arrayBuffer();
+      var parsed = parseCharacterFile(buffer);
+      if (selectedCommunityEntry !== entry) return; // superseded by another click while this was loading
+      selectedCommunityParsed = parsed;
+      drawCommunityPreview(buildStateFromManifest(parsed.manifest, parsed.images).state);
+      communityPreviewName.textContent = parsed.manifest.name || entry.name;
+      communityLoadBtn.disabled = false;
+    }catch(e){
+      if (selectedCommunityEntry !== entry) return;
+      communityPreviewName.textContent = "Could not load: " + errText(e);
+    }
+  }
+
+  // Read-only preview render: same auto-fit-bbox approach as the Pip-Boy
+  // holotape's own APP.JS preview (parts+bars only, no name/level text -
+  // drawString-equivalent canvas text can't shrink to match the character,
+  // and stock CHARSWITCHER itself settled on dropping it for that reason).
+  // Draws only the "healthy" variant of each part/face, matching what the
+  // character actually looks like at full health.
+  function drawCommunityPreview(builtState){
+    var canvas = document.getElementById("communityPreviewCanvas");
+    var W = canvas.width, H = canvas.height;
+    var ctx = canvas.getContext("2d");
+    ctx.clearRect(0,0,W,H);
+
+    var minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+    PART_KEYS.forEach(function(part){
+      var img = builtState.images[part === "face" ? "face_00" : part];
+      if (!img) return;
+      var pos = builtState.positions[part];
+      minX = Math.min(minX,pos.x); minY = Math.min(minY,pos.y);
+      maxX = Math.max(maxX,pos.x+img.w); maxY = Math.max(maxY,pos.y+img.h);
+    });
+    BAR_KEYS.forEach(function(barKey){
+      var b = builtState.bars[barKey];
+      var barMinX = b.x + (b.leftCap ? -30 : -19), barMaxX = b.x + (b.rightCap ? 30 : 19);
+      minX = Math.min(minX,barMinX); minY = Math.min(minY,b.y-5);
+      maxX = Math.max(maxX,barMaxX); maxY = Math.max(maxY,b.y+4);
+    });
+    if (!isFinite(minX)) return;
+
+    var bboxW = Math.max(1,maxX-minX), bboxH = Math.max(1,maxY-minY);
+    var k = 0.92 * Math.min(W/bboxW, H/bboxH);
+    var tx = (W - bboxW*k)/2 - minX*k, ty = (H - bboxH*k)/2 - minY*k;
+
+    var off = document.createElement("canvas");
+    PART_KEYS.forEach(function(part){
+      var img = builtState.images[part === "face" ? "face_00" : part];
+      if (!img) return;
+      var pos = builtState.positions[part];
+      drawSwatch(off, img, img);
+      ctx.drawImage(off, 0,0,img.w,img.h, tx+pos.x*k, ty+pos.y*k, img.w*k, img.h*k);
+    });
+
+    ctx.fillStyle = "#c3ffda";
+    BAR_KEYS.forEach(function(barKey){
+      drawPreviewBar(ctx, tx+builtState.bars[barKey].x*k, ty+builtState.bars[barKey].y*k,
+        !!builtState.bars[barKey].leftCap, !!builtState.bars[barKey].rightCap, k);
+    });
+  }
+  // Canvas port of the same bar shape stock draws (thin top accent, flat
+  // or notched caps, ~66% fill segment) - see layoutBar()'s SVG version.
+  function drawPreviewBar(ctx, x, y, leftCap, rightCap, k){
+    function rect(x0,y0,x1,y1){ ctx.fillRect(x0,y0,x1-x0,y1-y0); }
+    rect(x-19*k, y-5*k, x+19*k, y-4*k);
+    if (leftCap){
+      rect(x-30*k, y-5*k, x-19*k, y-4*k);
+      ctx.beginPath(); ctx.moveTo(x-18*k,y-4*k); ctx.lineTo(x-25*k,y-4*k); ctx.lineTo(x-18*k,y+4*k); ctx.closePath(); ctx.fill();
+    } else rect(x-19*k, y-4*k, x-18*k, y+4*k);
+    if (rightCap){
+      rect(x+19*k, y-5*k, x+30*k, y-4*k);
+      ctx.beginPath(); ctx.moveTo(x+18*k,y-4*k); ctx.lineTo(x+25*k,y-4*k); ctx.lineTo(x+18*k,y+4*k); ctx.closePath(); ctx.fill();
+    } else rect(x+18*k, y-4*k, x+19*k, y+4*k);
+    rect(x-16*k, y-2*k, x+16*k, y+4*k);
+  }
+
+  checkOAuthCallback();
+
   function decodeImageString(s){
     // Reverse of encodeImage: s is the raw heatshrink-compressed byte string
     // straight out of JSON.parse (no atob) - decompress with the same
@@ -1825,7 +2303,11 @@ var EspruinoUART = (function(){
   // whole import since most of a character file being usable beats none of
   // it, but silently dropping it left no way to know a character came in
   // partially wrong.
-  function importManifest(manifest, imagesObj){
+  // Builds a fresh state object from a parsed manifest/images pair without
+  // touching the live global state - shared by importManifest() (which
+  // then commits it) and the Community preview (which just wants to draw
+  // it on its own canvas and discard it if the user picks something else).
+  function buildStateFromManifest(manifest, imagesObj){
     var next = freshState();
     next.name = manifest.name || next.name;
     if (manifest.positions) for (var p in DEFAULT_POSITIONS) if (manifest.positions[p]) next.positions[p] = {x:manifest.positions[p].x, y:manifest.positions[p].y};
@@ -1837,11 +2319,15 @@ var EspruinoUART = (function(){
         catch(e){ failedKeys.push(k); }
       }
     });
-    state = next;
+    return {state:next, failedKeys:failedKeys};
+  }
+  function importManifest(manifest, imagesObj){
+    var built = buildStateFromManifest(manifest, imagesObj);
+    state = built.state;
     nameInput.value = state.name;
     layoutAll();
     saveState();
-    return failedKeys;
+    return built.failedKeys;
   }
 
   var resetModal = document.getElementById("resetModal");
