@@ -2068,12 +2068,30 @@ var EspruinoUART = (function(){
     return await response.json();
   }
 
+  // The Contents API requires the current file's own sha to overwrite an
+  // existing path (PUT without one only works for brand-new files) - a
+  // submission whose name+username combo was already approved would
+  // otherwise fail deep in commitNewBinaryFile() with a raw, confusing
+  // GitHub API error ("sha" wasn't supplied) instead of saying what's
+  // actually wrong. Checked against the upstream repo directly (not the
+  // user's own fork) since "already exists" means "already approved".
+  async function communityCharacterExists(filename){
+    var response = await fetch("https://api.github.com/repos/" + GITHUB_CONFIG.targetOwner + "/" + GITHUB_CONFIG.targetRepo + "/contents/community_chars/" + filename);
+    return response.ok;
+  }
+
   async function submitCharacterToCommunity(){
     if (!githubToken || !githubUser) return;
     var characterName = state.name || "New Character";
     var filename = sanitizeBaseName(characterName) + "-" + githubUser.login + ".char";
 
     try{
+      updateShareStatus("Checking for an existing submission...", "loading");
+      if (await communityCharacterExists(filename)){
+        updateShareStatus("\"" + characterName + "\" already exists in the community folder for your account. Rename it and try again.", "error");
+        return;
+      }
+
       updateShareStatus("Creating fork if needed...", "loading");
       var fork = await ensureFork();
 
@@ -2160,6 +2178,20 @@ var EspruinoUART = (function(){
       .sort(function(a,b){ return a.name.localeCompare(b.name); });
   }
 
+  // Filenames are "<sanitized character name>-<github username>.char" (see
+  // submitCharacterToCommunity()). The name half can itself contain dashes
+  // (eg "Cyborg-9000"), but the username half can't start/end with one and
+  // is always the last segment - so splitting on the *last* dash (not the
+  // first) is what keeps a dashed character name intact.
+  function communityDisplayName(filename){
+    var base = filename.replace(/\.char$/i, "");
+    var dash = base.lastIndexOf("-");
+    if (dash === -1) return base;
+    var name = base.slice(0, dash).replace(/_/g, " ");
+    var username = base.slice(dash + 1);
+    return name + " By " + username;
+  }
+
   function renderCommunityList(entries){
     communityFileList.innerHTML = "";
     if (!entries.length){
@@ -2170,7 +2202,7 @@ var EspruinoUART = (function(){
       var row = document.createElement("button");
       row.className = "file-row";
       row.type = "button";
-      row.innerHTML = "<span>" + entry.name.replace(/</g,"&lt;") + "</span><span class=\"file-arrow\">&#8594;</span>";
+      row.innerHTML = "<span>" + communityDisplayName(entry.name).replace(/</g,"&lt;") + "</span><span class=\"file-arrow\">&#8594;</span>";
       row.addEventListener("click", function(){ selectCommunityEntry(entry, row); });
       communityFileList.appendChild(row);
     });
@@ -2192,7 +2224,7 @@ var EspruinoUART = (function(){
       if (selectedCommunityEntry !== entry) return; // superseded by another click while this was loading
       selectedCommunityParsed = parsed;
       drawCommunityPreview(buildStateFromManifest(parsed.manifest, parsed.images).state);
-      communityPreviewName.textContent = parsed.manifest.name || entry.name;
+      communityPreviewName.textContent = communityDisplayName(entry.name);
       communityLoadBtn.disabled = false;
     }catch(e){
       if (selectedCommunityEntry !== entry) return;
@@ -2228,9 +2260,39 @@ var EspruinoUART = (function(){
     });
     if (!isFinite(minX)) return;
 
+    // The name/level tag is real text, not an image, so it can't shrink
+    // along with the character the way parts/bars do - fit the parts+bars
+    // bbox first (as before), then shrink that scale further, only if it
+    // has to, until the tag's own fixed-size box clears the canvas edges.
+    // Shows the same "Albert - Level 1" stock falls back to when no real
+    // player is known (see the editor's own draggable name-box placeholder)
+    // - the character's *own* name (eg "Cyborg") is the skin's name, not
+    // the in-game player name that would actually appear here.
     var bboxW = Math.max(1,maxX-minX), bboxH = Math.max(1,maxY-minY);
-    var k = 0.92 * Math.min(W/bboxW, H/bboxH);
-    var tx = (W - bboxW*k)/2 - minX*k, ty = (H - bboxH*k)/2 - minY*k;
+    var cx = (minX+maxX)/2, cy = (minY+maxY)/2, cx0 = W/2, cy0 = H/2;
+    var kMax = 0.92 * Math.min(W/bboxW, H/bboxH);
+
+    var nameText = "Albert · Level 1";
+    var namePos = builtState.positions.name;
+    var fontPx = 16;
+    ctx.font = fontPx + "px 'Space Mono', monospace";
+    var textW = ctx.measureText(nameText).width;
+    var textH = fontPx * 1.2;
+    var margin = 6;
+    var dx = namePos.x - cx, dy = namePos.y - cy;
+    function nameFits(k){
+      var ncx = cx0 + k*dx, ncy = cy0 + k*dy;
+      return ncx-textW/2>=margin && ncx+textW/2<=W-margin && ncy-textH/2>=margin && ncy+textH/2<=H-margin;
+    }
+    var k = kMax;
+    if (!nameFits(k)){
+      if (nameFits(0)){
+        var lo=0, hi=k;
+        for (var i=0;i<16;i++){ var mid=(lo+hi)/2; if (nameFits(mid)) lo=mid; else hi=mid; }
+        k = lo;
+      } else k = 0;
+    }
+    var tx = cx0 - k*cx, ty = cy0 - k*cy;
 
     var off = document.createElement("canvas");
     PART_KEYS.forEach(function(part){
@@ -2246,6 +2308,10 @@ var EspruinoUART = (function(){
       drawPreviewBar(ctx, tx+builtState.bars[barKey].x*k, ty+builtState.bars[barKey].y*k,
         !!builtState.bars[barKey].leftCap, !!builtState.bars[barKey].rightCap, k);
     });
+
+    ctx.font = fontPx + "px 'Space Mono', monospace";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(nameText, tx+namePos.x*k, ty+namePos.y*k);
   }
   // Canvas port of the same bar shape stock draws (thin top accent, flat
   // or notched caps, ~66% fill segment) - see layoutBar()'s SVG version.
