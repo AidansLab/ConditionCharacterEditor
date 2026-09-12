@@ -320,12 +320,23 @@
   <div class="panel">
     <div class="panel-head">
       <h2 id="editorTitle">HEAD</h2>
-      <button class="close-x" id="closeEditor">&times;</button>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button class="btn small" id="undoBtn" disabled title="Undo (Ctrl+Z)">Undo</button>
+        <button class="btn small" id="redoBtn" disabled title="Redo (Ctrl+Y)">Redo</button>
+        <button class="close-x" id="closeEditor">&times;</button>
+      </div>
     </div>
     <div class="variant-tabs" id="variantTabs"></div>
     <div class="editor-body">
       <div class="canvas-wrap"><canvas id="pixelCanvas"></canvas></div>
       <div class="editor-side">
+        <div>
+          <div class="size-row" style="margin-bottom:6px;"><label>Tool</label></div>
+          <div class="brush-shapes" id="toolButtons">
+            <button class="brush-shape-btn selected" data-tool="brush" title="Paint brush">&#9998;</button>
+            <button class="brush-shape-btn" data-tool="select" title="Select / move / scale">&#9974;</button>
+          </div>
+        </div>
         <div>
           <div class="size-row" style="margin-bottom:6px;"><label>Shade</label></div>
           <div class="palette" id="palette"></div>
@@ -342,6 +353,14 @@
         </div>
         <div>
           <div class="size-row"><label>W</label><input type="number" id="widthInput" min="1" max="100"><label>H</label><input type="number" id="heightInput" min="1" max="100"></div>
+        </div>
+        <div>
+          <div class="size-row" style="margin-bottom:6px;"><label>Trace</label></div>
+          <div class="brush-row">
+            <button class="btn small" id="loadTraceBtn">Load Image</button>
+            <input id="traceFile" type="file" accept="image/*" hidden>
+            <button class="btn small" id="clearTraceBtn" disabled>Clear</button>
+          </div>
         </div>
         <div class="preview-wrap">
           <label>1:1 Preview</label>
@@ -1309,6 +1328,107 @@ var EspruinoUART = (function(){
       if (hoverCell) redrawPixelEditor();
     });
   });
+
+  // ---------- tool selection (brush vs. select/move/scale) ----------
+  var tool = "brush";
+  var toolButtonsEl = document.getElementById("toolButtons");
+  Array.prototype.forEach.call(toolButtonsEl.children, function(btn){
+    btn.addEventListener("click", function(){
+      tool = btn.getAttribute("data-tool");
+      Array.prototype.forEach.call(toolButtonsEl.children, function(c){ c.classList.remove("selected"); });
+      btn.classList.add("selected");
+      hoverCell = null;
+      if (tool !== "select") { selection = null; dragMode = null; }
+      redrawPixelEditor();
+    });
+  });
+
+  // ---------- trace overlay ----------
+  // A reference image to paint over, not part of the character's own art -
+  // deliberately kept out of state/saveState() so it never gets persisted
+  // or exported, and is scaled to whatever tab is currently open rather
+  // than being tied to one specific part/face.
+  var traceImage = null;
+  var loadTraceBtn = document.getElementById("loadTraceBtn");
+  var traceFile = document.getElementById("traceFile");
+  var clearTraceBtn = document.getElementById("clearTraceBtn");
+  loadTraceBtn.addEventListener("click", function(){ traceFile.click(); });
+  traceFile.addEventListener("change", function(){
+    var file = traceFile.files[0];
+    traceFile.value = "";
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(){
+      var img = new Image();
+      img.onload = function(){
+        traceImage = img;
+        clearTraceBtn.disabled = false;
+        redrawPixelEditor();
+      };
+      img.onerror = function(){ toast("Could not load that image", true); };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+  clearTraceBtn.addEventListener("click", function(){
+    traceImage = null;
+    clearTraceBtn.disabled = true;
+    redrawPixelEditor();
+  });
+
+  // ---------- undo / redo ----------
+  // Per image-key stacks (not one shared pair) - switching tabs and back
+  // should undo/redo what you did on *that* image, not whatever you last
+  // touched on a different part/face variant.
+  var undoStacks = {}, redoStacks = {};
+  var undoBtn = document.getElementById("undoBtn");
+  var redoBtn = document.getElementById("redoBtn");
+  function snapshotCurrent(){
+    var img = state.images[currentImageKey];
+    return {w:img.w, h:img.h, pixels:img.pixels.slice()};
+  }
+  function pushUndo(){
+    var stack = undoStacks[currentImageKey] || (undoStacks[currentImageKey] = []);
+    stack.push(snapshotCurrent());
+    if (stack.length > 50) stack.shift(); // cap memory over a long session
+    redoStacks[currentImageKey] = []; // a new edit invalidates any redo history
+    updateUndoRedoBtns();
+  }
+  function updateUndoRedoBtns(){
+    var uStack = undoStacks[currentImageKey], rStack = redoStacks[currentImageKey];
+    undoBtn.disabled = !uStack || !uStack.length;
+    redoBtn.disabled = !rStack || !rStack.length;
+  }
+  function restoreSnapshot(snap){
+    var img = state.images[currentImageKey];
+    img.w = snap.w; img.h = snap.h; img.pixels = snap.pixels;
+    widthInput.value = img.w; heightInput.value = img.h;
+    selection = null; dragMode = null; dragBuffer = null;
+    updateUndoRedoBtns();
+    redrawPixelEditor();
+    saveState();
+  }
+  function undo(){
+    var stack = undoStacks[currentImageKey];
+    if (!stack || !stack.length) return;
+    (redoStacks[currentImageKey] || (redoStacks[currentImageKey] = [])).push(snapshotCurrent());
+    restoreSnapshot(stack.pop());
+  }
+  function redo(){
+    var stack = redoStacks[currentImageKey];
+    if (!stack || !stack.length) return;
+    (undoStacks[currentImageKey] || (undoStacks[currentImageKey] = [])).push(snapshotCurrent());
+    restoreSnapshot(stack.pop());
+  }
+  undoBtn.addEventListener("click", undo);
+  redoBtn.addEventListener("click", redo);
+  document.addEventListener("keydown", function(e){
+    if (editorModal.hidden) return;
+    if (!(e.ctrlKey || e.metaKey)) return;
+    var key = e.key.toLowerCase();
+    if (key === "z" && !e.shiftKey){ e.preventDefault(); undo(); }
+    else if (key === "y" || (key === "z" && e.shiftKey)){ e.preventDefault(); redo(); }
+  });
   var brushSizeValue = document.getElementById("brushSizeValue");
   brushSizeInput.addEventListener("input", function(){
     brushSize = Math.max(1, Math.min(8, +brushSizeInput.value || 1));
@@ -1374,6 +1494,8 @@ var EspruinoUART = (function(){
     var img = state.images[key];
     widthInput.value = img.w; heightInput.value = img.h;
     hoverCell = null; // stale from the previous tab's canvas coordinates
+    selection = null; dragMode = null; dragBuffer = null;
+    updateUndoRedoBtns();
     redrawPixelEditor();
   }
   function redrawPixelEditor(){
@@ -1381,11 +1503,24 @@ var EspruinoUART = (function(){
     cellSize = Math.max(4, Math.min(14, Math.floor(420/img.w), Math.floor(360/img.h)));
     pixelCanvas.width = img.w*cellSize; pixelCanvas.height = img.h*cellSize;
     var ctx = pixelCanvas.getContext("2d");
+    // Stretched (not letterboxed) to exactly this part's own w/h, same as
+    // its real pixel art - lets it be traced 1:1 regardless of the source
+    // photo's own aspect ratio. Drawn first, under everything else.
+    if (traceImage){
+      ctx.save();
+      ctx.globalAlpha = 0.45;
+      ctx.drawImage(traceImage, 0, 0, pixelCanvas.width, pixelCanvas.height);
+      ctx.restore();
+    }
     var SHADE = ["#000","#0f3d20","#2f9e5c","#a8ffc4"];
     for (var y=0;y<img.h;y++){
       for (var x=0;x<img.w;x++){
         var v = img.pixels[y*img.w+x] || 0;
         if (v===0){
+          // Transparent cells let the trace image underneath show through
+          // uncovered instead of the usual checkerboard, so tracing over
+          // it isn't fighting a pattern the whole time.
+          if (traceImage) continue;
           ctx.fillStyle = ((x+y)%2===0) ? "#0d1a12" : "#050a07";
         } else { ctx.fillStyle = SHADE[v]; }
         ctx.fillRect(x*cellSize, y*cellSize, cellSize, cellSize);
@@ -1396,8 +1531,44 @@ var EspruinoUART = (function(){
     for (var gx=0; gx<=img.w; gx++){ ctx.beginPath(); ctx.moveTo(gx*cellSize+.5,0); ctx.lineTo(gx*cellSize+.5,img.h*cellSize); ctx.stroke(); }
     for (var gy=0; gy<=img.h; gy++){ ctx.beginPath(); ctx.moveTo(0,gy*cellSize+.5); ctx.lineTo(img.w*cellSize,gy*cellSize+.5); ctx.stroke(); }
     if (hoverCell) drawBrushOutline(ctx, hoverCell.x, hoverCell.y);
+    if (tool === "select") drawSelectionOverlay(ctx);
     redrawPreview();
     if (currentPart) layoutPart(currentPart);
+  }
+  // Live preview of the lifted buffer while moving/scaling (img.pixels is
+  // already cleared under it at this point - see selectMouseDown), plus a
+  // dashed marquee and corner handles whenever a selection exists. 0
+  // ("transparent") in the buffer is treated as see-through here too, same
+  // as pasteBuffer() - so nudging a selection doesn't punch a rectangular
+  // hole through unrelated art it happens to overlap.
+  function drawSelectionOverlay(ctx){
+    if (!selection) return;
+    var SHADE = ["#000","#0f3d20","#2f9e5c","#a8ffc4"];
+    if (dragBuffer){
+      for (var y=0;y<selection.h;y++){
+        for (var x=0;x<selection.w;x++){
+          var sx = Math.min(dragBuffer.w-1, Math.floor(x*dragBuffer.w/selection.w));
+          var sy = Math.min(dragBuffer.h-1, Math.floor(y*dragBuffer.h/selection.h));
+          var v = dragBuffer.pixels[sy*dragBuffer.w+sx];
+          if (v === 0) continue;
+          ctx.fillStyle = SHADE[v];
+          ctx.fillRect((selection.x+x)*cellSize, (selection.y+y)*cellSize, cellSize, cellSize);
+        }
+      }
+    }
+    var x0 = selection.x*cellSize, y0 = selection.y*cellSize;
+    var x1 = (selection.x+selection.w)*cellSize, y1 = (selection.y+selection.h)*cellSize;
+    ctx.save();
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([5,4]);
+    ctx.strokeRect(x0+0.75, y0+0.75, Math.max(0,x1-x0-1.5), Math.max(0,y1-y0-1.5));
+    ctx.restore();
+    var hr = Math.max(4, cellSize*0.3);
+    ctx.fillStyle = "#c3ffda";
+    [[x0,y0],[x1,y0],[x0,y1],[x1,y1]].forEach(function(p){
+      ctx.fillRect(p[0]-hr, p[1]-hr, hr*2, hr*2);
+    });
   }
   // Outlines just the silhouette of the current brush at (hoverX,hoverY) -
   // an edge is drawn between a covered cell and an uncovered neighbor only,
@@ -1429,14 +1600,43 @@ var EspruinoUART = (function(){
   }
 
   var painting = false, paintBtn = 0, hoverCell = null;
+  // Selection tool state - a rect in image-pixel coordinates, plus whatever
+  // a drag is currently doing to it. dragBuffer holds pixels lifted out of
+  // the image (cleared to transparent underneath) while a move/scale is in
+  // progress; nothing is committed back until mouseup.
+  var selection = null, dragMode = null, dragHandle = null;
+  var dragStart = null, dragOrigSelection = null, dragBuffer = null, dragAnchor = null;
+
   pixelCanvas.addEventListener("contextmenu", function(e){ e.preventDefault(); });
-  pixelCanvas.addEventListener("mousedown", function(e){ painting = true; paintBtn = e.button; paintAt(e); });
-  pixelCanvas.addEventListener("mousemove", function(e){ if (painting) paintAt(e); else updateHoverCell(e); });
-  pixelCanvas.addEventListener("mouseleave", function(){ hoverCell = null; redrawPixelEditor(); });
-  window.addEventListener("mouseup", function(){ painting = false; });
+  pixelCanvas.addEventListener("mousedown", function(e){
+    if (tool === "select"){ selectMouseDown(e); return; }
+    painting = true; paintBtn = e.button;
+    pushUndo();
+    paintAt(e);
+  });
+  pixelCanvas.addEventListener("mousemove", function(e){
+    if (tool === "select"){ selectMouseMove(e); return; }
+    if (painting) paintAt(e); else updateHoverCell(e);
+  });
+  pixelCanvas.addEventListener("mouseleave", function(){
+    if (tool !== "select"){ hoverCell = null; redrawPixelEditor(); }
+  });
+  window.addEventListener("mouseup", function(e){
+    painting = false;
+    if (tool === "select") selectMouseUp(e);
+  });
   function cellFromEvent(e){
     var rect = pixelCanvas.getBoundingClientRect();
     return { x: Math.floor((e.clientX-rect.left)/cellSize), y: Math.floor((e.clientY-rect.top)/cellSize) };
+  }
+  // Nearest grid LINE (not cell) - what a corner handle actually grabs, so
+  // it can be dragged to any pixel boundary rather than snapping to cells.
+  function gridLineFromEvent(e){
+    var img = state.images[currentImageKey];
+    var rect = pixelCanvas.getBoundingClientRect();
+    var gx = Math.round((e.clientX-rect.left)/cellSize);
+    var gy = Math.round((e.clientY-rect.top)/cellSize);
+    return { x: Math.max(0, Math.min(img.w, gx)), y: Math.max(0, Math.min(img.h, gy)) };
   }
   function updateHoverCell(e){
     hoverCell = cellFromEvent(e);
@@ -1458,6 +1658,7 @@ var EspruinoUART = (function(){
   }
 
   function resizeCurrentImage(newW,newH){
+    pushUndo();
     var img = state.images[currentImageKey];
     newW = Math.max(1, Math.min(100, newW|0)); newH = Math.max(1, Math.min(100, newH|0));
     var np = new Array(newW*newH).fill(0);
@@ -1465,6 +1666,141 @@ var EspruinoUART = (function(){
     for (var y=0;y<ch;y++) for (var x=0;x<cw;x++) np[y*newW+x] = img.pixels[y*img.w+x];
     img.w = newW; img.h = newH; img.pixels = np;
     redrawPixelEditor(); saveState();
+  }
+
+  // ---------- selection tool: hit-testing, drag start/move/commit ----------
+  function selectionCanvasRect(){
+    if (!selection) return null;
+    return {
+      x0: selection.x*cellSize, y0: selection.y*cellSize,
+      x1: (selection.x+selection.w)*cellSize, y1: (selection.y+selection.h)*cellSize
+    };
+  }
+  // Returns "nw"/"ne"/"sw"/"se" for a corner handle, "move" for the body of
+  // the selection, or null - (cx,cy) are canvas-pixel coordinates.
+  function hitTestSelection(cx, cy){
+    var r = selectionCanvasRect();
+    if (!r) return null;
+    var hr = Math.max(7, cellSize*0.6);
+    function near(px,py){ return Math.abs(cx-px)<=hr && Math.abs(cy-py)<=hr; }
+    if (near(r.x0,r.y0)) return "nw";
+    if (near(r.x1,r.y0)) return "ne";
+    if (near(r.x0,r.y1)) return "sw";
+    if (near(r.x1,r.y1)) return "se";
+    if (cx>=r.x0 && cx<=r.x1 && cy>=r.y0 && cy<=r.y1) return "move";
+    return null;
+  }
+  function extractPixels(img, rect){
+    var pixels = new Array(rect.w*rect.h).fill(0);
+    for (var y=0;y<rect.h;y++) for (var x=0;x<rect.w;x++){
+      var sx = rect.x+x, sy = rect.y+y;
+      if (sx>=0 && sy>=0 && sx<img.w && sy<img.h) pixels[y*rect.w+x] = img.pixels[sy*img.w+sx];
+    }
+    return {w:rect.w, h:rect.h, pixels:pixels};
+  }
+  function clearPixels(img, rect){
+    for (var y=0;y<rect.h;y++) for (var x=0;x<rect.w;x++){
+      var px = rect.x+x, py = rect.y+y;
+      if (px>=0 && py>=0 && px<img.w && py<img.h) img.pixels[py*img.w+px] = 0;
+    }
+  }
+  // Nearest-neighbor resample of buffer into rect's own size, stamped at
+  // rect.x/y. 0 (transparent) in the buffer is left as a no-op so a move
+  // never punches a rectangular hole through art it happens to land over.
+  function pasteBuffer(img, buffer, rect){
+    for (var y=0;y<rect.h;y++) for (var x=0;x<rect.w;x++){
+      var px = rect.x+x, py = rect.y+y;
+      if (px<0||py<0||px>=img.w||py>=img.h) continue;
+      var sx = Math.min(buffer.w-1, Math.floor(x*buffer.w/rect.w));
+      var sy = Math.min(buffer.h-1, Math.floor(y*buffer.h/rect.h));
+      var v = buffer.pixels[sy*buffer.w+sx];
+      if (v !== 0) img.pixels[py*img.w+px] = v;
+    }
+  }
+  function selectMouseDown(e){
+    var rect = pixelCanvas.getBoundingClientRect();
+    var cx = e.clientX-rect.left, cy = e.clientY-rect.top;
+    var hit = hitTestSelection(cx, cy);
+    var img = state.images[currentImageKey];
+    if (hit === "move"){
+      pushUndo();
+      dragMode = "move";
+      dragStart = cellFromEvent(e);
+      dragOrigSelection = {x:selection.x, y:selection.y, w:selection.w, h:selection.h};
+      dragBuffer = extractPixels(img, selection);
+      clearPixels(img, selection);
+      redrawPixelEditor();
+      return;
+    }
+    if (hit === "nw" || hit === "ne" || hit === "sw" || hit === "se"){
+      pushUndo();
+      dragMode = "scale";
+      dragHandle = hit;
+      dragBuffer = extractPixels(img, selection);
+      clearPixels(img, selection);
+      dragAnchor = {
+        x: (hit === "nw" || hit === "sw") ? selection.x+selection.w : selection.x,
+        y: (hit === "nw" || hit === "ne") ? selection.y+selection.h : selection.y
+      };
+      redrawPixelEditor();
+      return;
+    }
+    // Clicked outside the current selection/handles - start a fresh one,
+    // replacing whatever was selected before.
+    dragMode = "new";
+    dragStart = cellFromEvent(e);
+    selection = {x:dragStart.x, y:dragStart.y, w:1, h:1};
+    redrawPixelEditor();
+  }
+  function selectMouseMove(e){
+    if (!dragMode){
+      var rect = pixelCanvas.getBoundingClientRect();
+      var hit = hitTestSelection(e.clientX-rect.left, e.clientY-rect.top);
+      pixelCanvas.style.cursor = hit==="move" ? "move" :
+        (hit==="nw"||hit==="se") ? "nwse-resize" : (hit==="ne"||hit==="sw") ? "nesw-resize" : "crosshair";
+      return;
+    }
+    var img = state.images[currentImageKey];
+    if (dragMode === "new"){
+      var cell = cellFromEvent(e);
+      var x0 = Math.min(dragStart.x, cell.x), x1 = Math.max(dragStart.x, cell.x);
+      var y0 = Math.min(dragStart.y, cell.y), y1 = Math.max(dragStart.y, cell.y);
+      var cx0 = Math.max(0,x0), cy0 = Math.max(0,y0);
+      selection = {
+        x:cx0, y:cy0,
+        w: Math.min(img.w,x1+1)-cx0, h: Math.min(img.h,y1+1)-cy0
+      };
+      redrawPixelEditor();
+      return;
+    }
+    if (dragMode === "move"){
+      var cell2 = cellFromEvent(e);
+      var dx = cell2.x-dragStart.x, dy = cell2.y-dragStart.y;
+      selection = {x:dragOrigSelection.x+dx, y:dragOrigSelection.y+dy, w:dragOrigSelection.w, h:dragOrigSelection.h};
+      redrawPixelEditor();
+      return;
+    }
+    if (dragMode === "scale"){
+      var g = gridLineFromEvent(e);
+      var nx0 = Math.min(dragAnchor.x,g.x), nx1 = Math.max(dragAnchor.x,g.x);
+      var ny0 = Math.min(dragAnchor.y,g.y), ny1 = Math.max(dragAnchor.y,g.y);
+      selection = {x:nx0, y:ny0, w:Math.max(1,nx1-nx0), h:Math.max(1,ny1-ny0)};
+      redrawPixelEditor();
+      return;
+    }
+  }
+  function selectMouseUp(){
+    if (!dragMode) return;
+    var img = state.images[currentImageKey];
+    if (dragMode === "move" || dragMode === "scale"){
+      pasteBuffer(img, dragBuffer, selection);
+      dragBuffer = null;
+      redrawPixelEditor();
+      saveState();
+    } else if (dragMode === "new"){
+      if (!selection || selection.w<1 || selection.h<1) selection = null;
+    }
+    dragMode = null; dragHandle = null; dragOrigSelection = null; dragAnchor = null; dragStart = null;
   }
   widthInput.addEventListener("change", function(){ resizeCurrentImage(+widthInput.value, state.images[currentImageKey].h); });
   heightInput.addEventListener("change", function(){ resizeCurrentImage(state.images[currentImageKey].w, +heightInput.value); });
@@ -1478,9 +1814,11 @@ var EspruinoUART = (function(){
     return { w:sz.w, h:sz.h, pixels:new Array(sz.w*sz.h).fill(0) };
   }
   document.getElementById("resetImageBtn").addEventListener("click", function(){
+    pushUndo();
     var img = stockImageFor(currentImageKey);
     state.images[currentImageKey] = img;
     widthInput.value = img.w; heightInput.value = img.h;
+    selection = null; dragMode = null; dragBuffer = null;
     redrawPixelEditor(); saveState();
   });
   document.getElementById("closeEditor").addEventListener("click", function(){ editorModal.hidden = true; layoutAll(); saveState(); });
@@ -2083,7 +2421,13 @@ var EspruinoUART = (function(){
   async function submitCharacterToCommunity(){
     if (!githubToken || !githubUser) return;
     var characterName = state.name || "New Character";
-    var filename = sanitizeBaseName(characterName) + "-" + githubUser.login + ".char";
+    // "@" (not "-") separates the name from the username - GitHub usernames
+    // can only ever contain alphanumerics and single internal hyphens, so a
+    // username like "lilycarl000-lang" (a real one that broke display
+    // parsing) made "-" an ambiguous choice once the character name itself
+    // could also contain one. sanitizeBaseName() already strips "@" out of
+    // the name half too, so neither side can ever contain the delimiter.
+    var filename = sanitizeBaseName(characterName) + "@" + githubUser.login + ".char";
 
     try{
       updateShareStatus("Checking for an existing submission...", "loading");
@@ -2185,10 +2529,18 @@ var EspruinoUART = (function(){
   // first) is what keeps a dashed character name intact.
   function communityDisplayName(filename){
     var base = filename.replace(/\.char$/i, "");
-    var dash = base.lastIndexOf("-");
-    if (dash === -1) return base;
-    var name = base.slice(0, dash).replace(/_/g, " ");
-    var username = base.slice(dash + 1);
+    // "@" is the current, unambiguous delimiter (see submitCharacterToCommunity) -
+    // usernames can't contain it and neither can a sanitized character name.
+    // Older submissions used "-" instead, which broke on any username that
+    // itself contains a hyphen (eg "lilycarl000-lang") - kept as a
+    // best-effort fallback so those still show *something* reasonable
+    // rather than nothing, even though it can't be made fully reliable
+    // after the fact.
+    var sep = base.indexOf("@");
+    if (sep === -1) sep = base.lastIndexOf("-");
+    if (sep === -1) return base;
+    var name = base.slice(0, sep).replace(/_/g, " ");
+    var username = base.slice(sep + 1);
     return name + " By " + username;
   }
 
